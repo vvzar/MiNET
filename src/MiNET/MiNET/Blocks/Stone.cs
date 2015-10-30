@@ -10,7 +10,7 @@ namespace MiNET.Blocks
 			IsSolid = true; //Will it stop you if you try going through it?
 			IsBuildable = true; //Can it be placed?
 			IsTransparent = false; //Can light go through it?
-			MetaData = 0; //Item meta data | 0-15
+			Metadata = 0; //Item meta data | 0-15
 			Hardness = 1.5; //Block breaking resistance amount
 			BlastResistance = 30; //Blast resistance amount
 			
