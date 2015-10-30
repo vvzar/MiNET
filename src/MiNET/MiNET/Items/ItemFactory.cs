@@ -238,7 +238,7 @@ namespace MiNET.Items
 						item = new ItemPainting(); //Added to list - 10/29/2015
 						break;
 					case 322:
-						item = new ItemGoldenApple(metadata); //Added metadata parameter - 10/29/2015
+						item = new ItemGoldenApple();
 						break;
 					case 323:
 						item = new ItemSign(metadata);
@@ -385,7 +385,7 @@ namespace MiNET.Items
 						item = new ItemBrewingStand(); //Added to list - 10/29/2015
 						break;
 					case 378:
-						item = new ItemSlimeball(); //Added to list - 10/29/2015
+						item = new ItemGlisteringMelon(); //Added to list - 10/29/2015
 						break;
 					case 383:
 						item = new ItemSpawnEgg(metadata);
