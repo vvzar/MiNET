@@ -1,5 +1,7 @@
 using System;
+using System.Resources;
 using System.Text;
+using System.Threading;
 using MiNET.Net;
 using MiNET.Utils;
 using MiNET.Worlds;
@@ -58,10 +60,10 @@ namespace MiNET.Entities
 		public override void SpawnEntity()
 		{
 			Level.AddEntity(this);
-			IsSpawned = true;
-			BroadcastSetEntityData();
-
 			SpawnToAll();
+			IsSpawned = true;
+
+			BroadcastSetEntityData();
 		}
 
 		public override void SpawnToPlayer(Player player)
@@ -77,7 +79,8 @@ namespace MiNET.Entities
 
 				McpePlayerList playerList = McpePlayerList.CreateObject();
 				playerList.records = new PlayerAddRecords { fake };
-				player.SendPackage(playerList, true);
+				player.SendPackage(playerList);
+				//player.SendDirectPackage(playerList);
 			}
 
 			{

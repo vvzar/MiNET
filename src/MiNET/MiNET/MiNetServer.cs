@@ -164,7 +164,6 @@ namespace MiNET
 
 				_ackTimer = new Timer(SendAckQueue, null, 0, 50);
 				_cleanerTimer = new Timer(Update, null, 10, Timeout.Infinite);
-				//_cleanerTimer = new Timer(Update, null, 10, Timeout.Infinite);
 
 				_listener.BeginReceive(ReceiveCallback, _listener);
 
@@ -236,6 +235,7 @@ namespace MiNET
 			}
 			catch (Exception e)
 			{
+				Log.Error("Unexpected end of transmission?", e);
 				if (listener.Client != null)
 				{
 					try
@@ -244,6 +244,7 @@ namespace MiNET
 					}
 					catch (ObjectDisposedException dex)
 					{
+						Log.Error("Unexpected end of transmission?", dex);
 					}
 				}
 
@@ -259,7 +260,7 @@ namespace MiNET
 				try
 				{
 					if (!GreylistManager.IsWhitelisted(senderEndpoint.Address) && GreylistManager.IsBlacklisted(senderEndpoint.Address)) return;
-					//if (GreylistManager.IsGreylisted(senderEndpoint.Address)) return;
+					if (GreylistManager.IsGreylisted(senderEndpoint.Address)) return;
 					ProcessMessage(receiveBytes, senderEndpoint);
 				}
 				catch (Exception e)
@@ -296,7 +297,6 @@ namespace MiNET
 					//{
 					//	_badPacketBans.Add(senderEndpoint.Address, true);
 					//}
-					GreylistManager.Greylist(senderEndpoint.Address, 1000);
 					return;
 				}
 
@@ -455,8 +455,6 @@ namespace MiNET
 
 		private void HandleRakNetMessage(IPEndPoint senderEndpoint, UnconnectedPing incoming)
 		{
-			GreylistManager.Greylist(senderEndpoint.Address, 1000);
-
 			//TODO: This needs to be verified with RakNet first
 			//response.sendpingtime = msg.sendpingtime;
 			//response.sendpongtime = DateTimeOffset.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
@@ -586,9 +584,10 @@ namespace MiNET
 			List<Package> messages = package.Messages;
 			foreach (var message in messages)
 			{
-				message.DatagramSequenceNumber = package._datagramSequenceNumber;
-				message.OrderingChannel = package._orderingChannel;
-				message.OrderingIndex = package._orderingIndex;
+				//message.DatagramSequenceNumber = package._datagramSequenceNumber;
+				//message.ReliableMessageNumber = package._reliableMessageNumber;
+				//message.OrderingChannel = package._orderingChannel;
+				//message.OrderingIndex = package._orderingIndex;
 
 				if (message is SplitPartPackage)
 				{
@@ -611,7 +610,7 @@ namespace MiNET
 
 			if (!playerSession.Splits.ContainsKey(spId))
 			{
-				playerSession.Splits.Add(spId, new SplitPartPackage[spCount]);
+				playerSession.Splits.TryAdd(spId, new SplitPartPackage[spCount]);
 			}
 
 			SplitPartPackage[] spPackets = playerSession.Splits[spId];
@@ -626,6 +625,9 @@ namespace MiNET
 			if (!haveEmpty)
 			{
 				Log.DebugFormat("Got all {0} split packages for split ID: {1}", spCount, spId);
+
+				SplitPartPackage[] waste;
+				playerSession.Splits.TryRemove(spId, out waste);
 
 				MemoryStream stream = new MemoryStream();
 				for (int i = 0; i < spPackets.Length; i++)
@@ -642,13 +644,12 @@ namespace MiNET
 					splitPartPackage.PutPool();
 				}
 
-				playerSession.Splits.Remove(spId);
-
 				byte[] buffer = stream.ToArray();
 				try
 				{
 					Package fullMessage = PackageFactory.CreatePackage(buffer[0], buffer) ?? new UnknownPackage(buffer[0], buffer);
 					fullMessage.DatagramSequenceNumber = package._datagramSequenceNumber;
+					fullMessage.ReliableMessageNumber = package._reliableMessageNumber;
 					fullMessage.OrderingChannel = package._orderingChannel;
 					fullMessage.OrderingIndex = package._orderingIndex;
 					HandlePackage(fullMessage, playerSession);
@@ -719,7 +720,7 @@ namespace MiNET
 						{"hostname", "Minecraft PE Server"},
 						{"gametype", "SMP"},
 						{"game_id", "MINECRAFTPE"},
-						{"version", "0.12.3"},
+						{"version", "0.13.0"},
 						{"server_engine", "MiNET v1.0.0"},
 						{"plugins", "MiNET v1.0.0"},
 						{"map", "world"},
@@ -747,7 +748,6 @@ namespace MiNET
 					stream.WriteByte(0);
 					var buffer = stream.ToArray();
 					_listener.Send(buffer, buffer.Length, senderEndpoint);
-					GreylistManager.Greylist(senderEndpoint.Address, 5000);
 					break;
 				}
 				default:
@@ -778,6 +778,9 @@ namespace MiNET
 				for (int i = start; i <= end; i++)
 				{
 					session.ErrorCount++;
+
+					// HACK: Just to make sure we aren't getting unessecary load on the queue during heavy buffering.
+					if (ServerInfo.AvailableBytes > 1000) continue;
 
 					Datagram datagram;
 					if (queue.TryGetValue(i, out datagram))
@@ -859,8 +862,8 @@ namespace MiNET
 
 			ack.PutPool();
 
-			session.WaitForAck = false;
 			session.ResendCount = 0;
+			session.WaitForAck = false;
 		}
 
 		internal void HandlePackage(Package message, PlayerNetworkSession playerSession)
@@ -975,13 +978,17 @@ namespace MiNET
 
 				Parallel.ForEach(_playerSessions, delegate(KeyValuePair<IPEndPoint, PlayerNetworkSession> pair)
 				{
-					var session = pair.Value;
+					PlayerNetworkSession session = pair.Value;
+
 					if (session == null) return;
 					if (session.Evicted) return;
+
 					Player player = session.Player;
 
 					long lastUpdate = session.LastUpdatedTime.Ticks/TimeSpan.TicksPerMillisecond;
-					if (ServerInfo.AvailableBytes < 1000 && lastUpdate + InacvitityTimeout + 3000 /*+ Math.Min(5000, ServerInfo.AvailableBytes)*/< now)
+					bool serverHasNoLag = ServerInfo.AvailableBytes < 1000;
+
+					if (serverHasNoLag && lastUpdate + InacvitityTimeout + 3000 < now)
 					{
 						session.Evicted = true;
 						// Disconnect user
@@ -1012,7 +1019,7 @@ namespace MiNET
 					}
 
 
-					if (ServerInfo.AvailableBytes < 1000 && session.State != ConnectionState.Connected && player != null && lastUpdate + 3000 < now)
+					if (serverHasNoLag && session.State != ConnectionState.Connected && player != null && lastUpdate + 3000 < now)
 					{
 						ThreadPool.QueueUserWorkItem(delegate(object o)
 						{
@@ -1029,9 +1036,10 @@ namespace MiNET
 
 					if (player == null) return;
 
-					if (lastUpdate + InacvitityTimeout < now)
+					if (serverHasNoLag && lastUpdate + InacvitityTimeout < now && !session.WaitForAck)
 					{
 						player.DetectLostConnection();
+						session.WaitForAck = true;
 					}
 
 					if (player.Rto == 0) return;
@@ -1042,11 +1050,11 @@ namespace MiNET
 					foreach (KeyValuePair<int, Datagram> datagramPair in queue)
 					{
 						// We don't do too much processing in each step, becasue one bad queue will hold the others.
-						if (_forceQuitTimer.ElapsedMilliseconds > 100)
-						{
-							Log.WarnFormat("Update aborted early");
-							return;
-						}
+						//if (_forceQuitTimer.ElapsedMilliseconds > 100)
+						//{
+						//	Log.WarnFormat("Update aborted early");
+						//	return;
+						//}
 
 						var datagram = datagramPair.Value;
 
@@ -1059,22 +1067,29 @@ namespace MiNET
 
 						if (player.Rtt == -1) return;
 
-						if (session.WaitForAck) return;
+						//if (session.WaitForAck) return;
 
 						long elapsedTime = datagram.Timer.ElapsedMilliseconds;
 						long datagramTimout = rto*(datagram.TransmissionCount + session.ResendCount + 1);
-						if (ServerInfo.AvailableBytes < 1000 && elapsedTime >= datagramTimout)
-						{
-							if (session.WaitForAck) return;
 
-							session.WaitForAck = session.ResendCount++ > 3;
+						//if(elapsedTime > 5000)
+						//{
+						//	Datagram deleted;
+						//	queue.TryRemove(datagram.Header.datagramSequenceNumber, out deleted);
+						//}
+						//else 
+						if (serverHasNoLag && elapsedTime >= datagramTimout)
+						{
+							//if (session.WaitForAck) return;
+
+							//session.WaitForAck = session.ResendCount++ > 3;
 
 							Datagram deleted;
 							if (queue.TryRemove(datagram.Header.datagramSequenceNumber, out deleted))
 							{
 								session.ErrorCount++;
 
-								if (deleted.TransmissionCount > 1)
+								if (deleted.TransmissionCount > 3)
 								{
 									if (Log.IsDebugEnabled)
 										Log.WarnFormat("TIMEOUT, Retransmission count remove from ACK queue #{0} Type: {2} (0x{2:x2}) for {1} ({3} > {4}) RTO {5}",
@@ -1087,7 +1102,7 @@ namespace MiNET
 
 									deleted.PutPool();
 
-									session.WaitForAck = true;
+									//session.WaitForAck = true;
 
 									continue;
 								}
@@ -1104,7 +1119,7 @@ namespace MiNET
 												elapsedTime,
 												datagramTimout,
 												player.Rto);
-										SendDatagram(session, (Datagram) data, false);
+										SendDatagram(session, (Datagram) data);
 									}, datagram);
 								}
 							}
@@ -1114,34 +1129,37 @@ namespace MiNET
 			}
 			finally
 			{
-				_cleanerTimer.Change(10, Timeout.Infinite);
+				if (_forceQuitTimer.ElapsedMilliseconds > 100)
+				{
+					Log.WarnFormat("Update took unexpected long time: {0}", _forceQuitTimer.ElapsedMilliseconds);
+				}
+
 				Monitor.Exit(_updateGlobalLock);
+				_cleanerTimer.Change(10, Timeout.Infinite);
 			}
 		}
 
-		public void SendPackage(Player player, Package message, int mtuSize, ref int reliableMessageNumber, Reliability reliability = Reliability.Reliable)
+		public void SendPackage(Player player, Package message, int mtuSize, Reliability reliability = Reliability.Reliable)
 		{
 			if (message == null) return;
 
 			PlayerNetworkSession session;
 			if (_playerSessions.TryGetValue(player.EndPoint, out session))
 			{
-				Datagram.CreateDatagrams(message, mtuSize, ref reliableMessageNumber, session, SendDatagram);
+				foreach (var datagram in Datagram.CreateDatagrams(message, mtuSize, session))
+				{
+					SendDatagram(session, datagram);
+				}
 
 				TraceSend(message);
 
 				message.PutPool();
 
-				Thread.Sleep(1); // Really important to slow down speed a bit
+				//Thread.Sleep(1); // Really important to slow down speed a bit
 			}
 		}
 
 		private void SendDatagram(PlayerNetworkSession session, Datagram datagram)
-		{
-			SendDatagram(session, datagram, true);
-		}
-
-		private void SendDatagram(PlayerNetworkSession session, Datagram datagram, bool updateCounter)
 		{
 			if (datagram.MessageParts.Count == 0)
 			{
@@ -1150,10 +1168,7 @@ namespace MiNET
 				return;
 			}
 
-			if (updateCounter)
-			{
-				datagram.Header.datagramSequenceNumber = Interlocked.Increment(ref session.DatagramSequenceNumber);
-			}
+			datagram.Header.datagramSequenceNumber = Interlocked.Increment(ref session.DatagramSequenceNumber);
 
 			datagram.TransmissionCount++;
 

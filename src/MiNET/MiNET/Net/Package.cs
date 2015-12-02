@@ -18,12 +18,14 @@ namespace MiNET.Net
 	{
 		private static readonly ILog Log = LogManager.GetLogger(typeof (Package));
 
-		protected object _bufferSync = new object();
 		private bool _isEncoded = false;
 		private byte[] _encodedMessage;
 
 		public int DatagramSequenceNumber = 0;
 
+		public bool NoBatch { get; set; }
+
+		public int ReliableMessageNumber = 0;
 		public int OrderingChannel = 0;
 		public int OrderingIndex = 0;
 
@@ -435,9 +437,9 @@ namespace MiNET.Net
 
 			Write((short) metadata.Count);
 
-			for (byte i = 0; i < metadata.Count; i++)
+			for (int i = 0; i < metadata.Count; i++)
 			{
-				if (!metadata.Contains(i)) continue;
+				//if (!metadata.Contains(i)) continue;
 
 				MetadataSlot slot = metadata[i] as MetadataSlot;
 				if (slot != null)
@@ -451,7 +453,16 @@ namespace MiNET.Net
 					Write(slot.Value.Id);
 					Write(slot.Value.Count);
 					Write(slot.Value.Metadata);
-					Write((short) 0); // NBT Len
+					if (slot.Value.ExtraData == null)
+					{
+						Write((short)0);
+					}
+					else
+					{
+						var bytes = GetNbtData(slot.Value.ExtraData);
+						Write((short)bytes.Length);
+						Write(bytes);
+					}
 				}
 			}
 		}
@@ -471,11 +482,14 @@ namespace MiNET.Net
 					continue;
 				}
 
-				metadata[i] = new MetadataSlot(new ItemStack(id, ReadByte(), ReadShort()));
+				var stack = new ItemStack(id, ReadByte(), ReadShort());
+				var slot = new MetadataSlot(stack);
+				metadata[i] = slot;
 				int nbtLen = ReadShort(); // NbtLen
 				if (nbtLen > 0)
 				{
-					ReadBytes(nbtLen); // Slurp
+					stack.ExtraData = ReadNbt().NbtFile.RootTag;
+					//ReadBytes(nbtLen); // Slurp
 				}
 			}
 
@@ -484,7 +498,7 @@ namespace MiNET.Net
 
 		public void Write(MetadataSlot slot)
 		{
-			if (slot == null || slot.Value.Id == 0)
+			if (slot == null || slot.Value.Id <= 0)
 			{
 				Write((short) 0);
 				return;
@@ -493,15 +507,38 @@ namespace MiNET.Net
 			Write(slot.Value.Id);
 			Write(slot.Value.Count);
 			Write(slot.Value.Metadata);
-			Write((short) 0);
+			if (slot.Value.ExtraData == null)
+			{
+				Write((short) 0);
+			}
+			else
+			{
+				var bytes = GetNbtData(slot.Value.ExtraData);
+				Write((short) bytes.Length);
+				Write(bytes);
+			}
+		}
+
+		private byte[] GetNbtData(NbtCompound nbtCompound)
+		{
+			nbtCompound.Name = string.Empty;
+			var file = new NbtFile(nbtCompound);
+			file.BigEndian = false;
+
+			return file.SaveToBuffer(NbtCompression.None);
 		}
 
 		public MetadataSlot ReadMetadataSlot()
 		{
 			short id = ReadShort();
-			if (id == 0) return new MetadataSlot(new ItemStack());
+			if (id <= 0)
+				return new MetadataSlot(new ItemStack(id, 0, 0));
 
-			MetadataSlot metadataSlot = new MetadataSlot(new ItemStack(id, ReadByte(), ReadShort()));
+			var count = ReadByte();
+			if (count == 0)
+				return new MetadataSlot(new ItemStack(id, 0, 0));
+			short metadata = ReadShort();
+			MetadataSlot metadataSlot = new MetadataSlot(new ItemStack(id, count, metadata));
 			ReadShort(); // Nbt len
 			return metadataSlot;
 		}
@@ -555,6 +592,7 @@ namespace MiNET.Net
 		public Skin ReadSkin()
 		{
 			Skin skin = new Skin();
+			skin.Alpha = ReadByte();
 			skin.Slim = ReadByte() == 0x01;
 			try
 			{
@@ -569,6 +607,7 @@ namespace MiNET.Net
 
 		public void Write(Skin skin)
 		{
+			Write(skin.Alpha);
 			Write((byte) (skin.Slim ? 0x01 : 0x00));
 			if (skin.Texture != null)
 			{
@@ -682,11 +721,12 @@ namespace MiNET.Net
 		{
 			DatagramSequenceNumber = 0;
 			OrderingIndex = 0;
+			NoBatch = false;
 			_encodedMessage = null;
 			_writer.Flush();
 			_buffer.SetLength(0);
 			_buffer.Position = 0;
-			_timer.Reset();
+			_timer.Restart();
 			_isEncoded = false;
 		}
 

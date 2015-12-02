@@ -28,14 +28,14 @@ namespace TestPlugin.NiceLobby
 
 		protected override void OnEnable()
 		{
-			_popupTimer = new Timer(DoDevelopmentPopups, null, 10000, 20000);
+			//_popupTimer = new Timer(DoDevelopmentPopups, null, 10000, 20000);
 			//_gameTimer = new Timer(StartNewRoundCallback, null, 15000, 60000*3);
 			//_tickTimer = new Timer(LevelTick, null, 0, 50);
-			foreach (var level in Context.LevelManager.Levels)
-			{
-				level.BlockBreak += LevelOnBlockBreak;
-				level.BlockPlace += LevelOnBlockPlace;
-			}
+			//foreach (var level in Context.LevelManager.Levels)
+			//{
+			//	level.BlockBreak += LevelOnBlockBreak;
+			//	level.BlockPlace += LevelOnBlockPlace;
+			//}
 		}
 
 		private void LevelOnBlockBreak(object sender, BlockBreakEventArgs e)
@@ -188,10 +188,12 @@ namespace TestPlugin.NiceLobby
 		[PacketHandler, Send, UsedImplicitly]
 		public Package RespawnHandler(McpeRespawn packet, Player player)
 		{
-			//player.SetEffect(new Speed {Level = 1, Duration = Effect.MaxDuration});
+			player.RemoveAllEffects();
+
+			player.SetEffect(new Speed { Level = 2, Duration = 1000 });
 			////player.SetEffect(new Slowness {Level = 2, Duration = 20});
-			//player.SetEffect(new JumpBoost {Level = 1, Duration = Effect.MaxDuration});
-			player.SetAutoJump(true);
+			//player.SetEffect(new JumpBoost { Level = 2, Duration = Effect.MaxDuration });
+			//player.SetAutoJump(true);
 
 			if (player.Level.LevelId.Equals("Default"))
 			{

@@ -1,4 +1,5 @@
 using System.IO;
+using fNbt;
 using MiNET.Items;
 
 namespace MiNET.Utils
@@ -17,6 +18,8 @@ namespace MiNET.Utils
 		{
 			get { return Item.Metadata; }
 		}
+
+		public NbtCompound ExtraData { get; set; }
 
 		public ItemStack() : this(0, 0, 0)
 		{
@@ -50,6 +53,27 @@ namespace MiNET.Utils
 			stream.Write(Id);
 			stream.Write(Count);
 			stream.Write(Metadata);
+		}
+
+		protected bool Equals(ItemStack other)
+		{
+			return Equals(Item, other.Item) && Count == other.Count;
+		}
+
+		public override bool Equals(object obj)
+		{
+			if (ReferenceEquals(null, obj)) return false;
+			if (ReferenceEquals(this, obj)) return true;
+			if (obj.GetType() != this.GetType()) return false;
+			return Equals((ItemStack) obj);
+		}
+
+		public override int GetHashCode()
+		{
+			unchecked
+			{
+				return ((Item != null ? Item.GetHashCode() : 0)*397) ^ Count.GetHashCode();
+			}
 		}
 	}
 }

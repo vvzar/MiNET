@@ -11,6 +11,7 @@ namespace MiNET.Items
 
 		public ItemSpawnEgg(short metadata) : base(383, metadata)
 		{
+			MaxStackSize = 1;
 		}
 
 		public override void UseItem(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
@@ -22,7 +23,7 @@ namespace MiNET.Items
 				KnownPosition = new PlayerLocation(coordinates.X, coordinates.Y, coordinates.Z),
 				//Data = -(blockId | 0 << 0x10)
 			};
-			entity.SpawnEntity();
+			//entity.SpawnEntity();
 
 			Log.WarnFormat("Player {0} spawned Mob #{1}.", player.Username, Metadata);
 			//world.BroadcastTextMessage(string.Format("Player {0} spawned Mob #{1}.", player.Username, Metadata));

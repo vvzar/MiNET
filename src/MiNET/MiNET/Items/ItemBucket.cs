@@ -11,13 +11,12 @@ namespace MiNET.Items
 
 		public ItemBucket(short metadata) : base(325, metadata)
 		{
+			MaxStackSize = 1;
 			FuelEfficiency = (short) (Metadata == 10 ? 1000 : 0);
 		}
 
 		public override void UseItem(Level world, Player player, BlockCoordinates blockCoordinates, BlockFace face, Vector3 faceCoords)
 		{
-			Log.Warn("Player " + player.Username + " should be banned for hacking!");
-
 			var coordinates = GetNewCoordinatesFromFace(blockCoordinates, face);
 			if (Metadata == 8 || Metadata == 10) //Prevent some kind of cheating...
 			{
